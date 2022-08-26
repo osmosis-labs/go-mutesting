@@ -22,3 +22,7 @@ require (
 	gopkg.in/yaml.v2 v2.2.2
 	honnef.co/go/tools v0.0.1-2019.2.3 // indirect
 )
+
+replace (
+	github/com/zimmski/go-mutesting => github.com/osmosis-labs/go-mutesting v0.0.0-20220826155057-85432bbd9541
+)
