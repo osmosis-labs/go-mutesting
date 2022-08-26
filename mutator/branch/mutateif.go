@@ -26,7 +26,7 @@ func MutatorIf(pkg *types.Package, info *types.Info, node ast.Node) []mutator.Mu
 	containsErr := strings.Contains(fmt.Sprintf("%v", n.Cond), "err")
 	containsNilCheck := strings.Contains(fmt.Sprintf("%v", n.Cond), "!= nil")
 	
-	if containsErr && containsNilCheck && len(n.Body.List) == 1 {
+	if containsErr && containsNilCheck {
 		return nil
 	}
 	return []mutator.Mutation{
