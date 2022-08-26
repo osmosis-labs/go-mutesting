@@ -22,10 +22,12 @@ func MutatorIf(pkg *types.Package, info *types.Info, node ast.Node) []mutator.Mu
 	}
 
 	old := n.Body.List
-	
+
+	fmt.Printf("TEST %v \n", n.Cond)
+
 	containsErr := strings.Contains(fmt.Sprintf("%v", n.Cond), "err")
 	containsNilCheck := strings.Contains(fmt.Sprintf("%v", n.Cond), "!= nil")
-	
+
 	if containsErr && containsNilCheck {
 		return nil
 	} else {
@@ -38,7 +40,8 @@ func MutatorIf(pkg *types.Package, info *types.Info, node ast.Node) []mutator.Mu
 				},
 				Reset: func() {
 					n.Body.List = old
+				},
 			},
-		},
+		}
 	}
 }
