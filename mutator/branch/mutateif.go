@@ -28,16 +28,16 @@ func MutatorIf(pkg *types.Package, info *types.Info, node ast.Node) []mutator.Mu
 	
 	if containsErr && containsNilCheck {
 		return nil
-	}
-	return []mutator.Mutation{
-		{
-			Change: func() {
-				n.Body.List = []ast.Stmt{
-					astutil.CreateNoopOfStatement(pkg, info, n.Body),
-				}
-			},
-			Reset: func() {
-				n.Body.List = old
+	} else {
+		return []mutator.Mutation{
+			{
+				Change: func() {
+					n.Body.List = []ast.Stmt{
+						astutil.CreateNoopOfStatement(pkg, info, n.Body),
+					}
+				},
+				Reset: func() {
+					n.Body.List = old
 			},
 		},
 	}
