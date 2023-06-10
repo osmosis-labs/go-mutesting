@@ -23,6 +23,15 @@ func checkRemoveStatement(node ast.Stmt) bool {
 		}
 	case *ast.ExprStmt, *ast.IncDecStmt:
 		return true
+	case *ast.CallExpr:
+		// Exclude ctx.Logger().Debug statements
+		selector, ok := n.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "Debug" {
+			ident, ok := selector.X.(*ast.SelectorExpr)
+			if ok && ident.Sel.Name == "Logger" && ident.X.(*ast.Ident).Name == "ctx" {
+				return false
+			}
+		}
 	}
 
 	return false
