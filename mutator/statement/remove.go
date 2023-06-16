@@ -15,7 +15,7 @@ func init() {
 	mutator.Register("statement/remove", MutatorRemoveStatement)
 }
 
-func checkRemoveStatement(node ast.Stmt) bool {
+func checkRemoveStatement(node ast.Node) bool {
 	switch n := node.(type) {
 	case *ast.AssignStmt:
 		if n.Tok != token.DEFINE {
