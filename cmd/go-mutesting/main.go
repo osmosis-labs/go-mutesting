@@ -161,6 +161,12 @@ func (ms *mutationStats) Total() int {
 	return ms.passed + ms.failed + ms.skipped
 }
 
+type mutationResult struct {
+	file  string
+	stats *mutationStats
+	err   error
+}
+
 func mainCmd(args []string) int {
 	var opts = &options{}
 	var mutationBlackList = map[string]struct{}{}
@@ -213,9 +219,8 @@ func mainCmd(args []string) int {
 				}
 
 				if len(line) != 32 {
-					return exitError("%q is not a MD5 checksum", line)
+					return exitError("%q is not an MD5 checksum", line)
 				}
-
 				mutationBlackList[line] = struct{}{}
 			}
 		}
@@ -264,48 +269,79 @@ MUTATOR:
 	// place to collect high-level mutation testing results
 	stats := &mutationStats{}
 
-	// run each allowed mutator on each file
+	// create a channel to receive mutation results
+	resultChan := make(chan *mutationResult)
+
+	// run each allowed mutator on each file concurrently
 	for _, file := range files {
-		verbose(opts, "Mutate %q", file)
+		go func(file string) {
+			verbose(opts, "Mutate %q", file)
 
-		src, fset, pkg, info, err := mutesting.ParseAndTypeCheckFile(file)
-		if err != nil {
-			return exitError(err.Error())
-		}
-
-		err = os.MkdirAll(tmpDir+"/"+filepath.Dir(file), 0755)
-		if err != nil {
-			panic(err)
-		}
-
-		tmpFile := tmpDir + "/" + file
-
-		// copy pre-mutation file to a temporary file for safekeeping
-		originalFile := fmt.Sprintf("%s.original", tmpFile)
-		err = osutil.CopyFile(file, originalFile)
-		if err != nil {
-			panic(err)
-		}
-		debug(opts, "Save original into %q", originalFile)
-
-		// tracks local mutation number (resets for each new file)
-		mutationID := 0
-
-		// (core mutation logic) apply relevant function filters and run mutation
-		if opts.Filter.Match != "" {
-			m, err := regexp.Compile(opts.Filter.Match)
+			src, fset, pkg, info, err := mutesting.ParseAndTypeCheckFile(file)
 			if err != nil {
-				return exitError("Match regex is not valid: %v", err)
+				resultChan <- &mutationResult{err: err}
+				return
 			}
 
-			for _, f := range astutil.Functions(src) {
-				if m.MatchString(f.Name.Name) {
-					mutationID = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats)
-				}
+			err = os.MkdirAll(tmpDir+"/"+filepath.Dir(file), 0755)
+			if err != nil {
+				resultChan <- &mutationResult{err: err}
+				return
 			}
-		} else {
-			_ = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats)
+
+			tmpFile := tmpDir + "/" + file
+
+			// copy pre-mutation file to a temporary file for safekeeping
+			originalFile := fmt.Sprintf("%s.original", tmpFile)
+			err = osutil.CopyFile(file, originalFile)
+			if err != nil {
+				resultChan <- &mutationResult{err: err}
+				return
+			}
+			debug(opts, "Save original into %q", originalFile)
+
+			// tracks local mutation number (resets for each new file)
+			mutationID := 0
+
+			// (core mutation logic) apply relevant function filters and run mutation
+			if opts.Filter.Match != "" {
+				m, err := regexp.Compile(opts.Filter.Match)
+				if err != nil {
+					resultChan <- &mutationResult{err: fmt.Errorf("Match regex is not valid: %v", err)}
+					return
+				}
+
+				for _, f := range astutil.Functions(src) {
+					if m.MatchString(f.Name.Name) {
+						mutationID = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats)
+					}
+				}
+			} else {
+				_ = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats)
+			}
+
+			resultChan <- &mutationResult{file: file, stats: stats}
+		}(file)
+	}
+
+	// collect the mutation results from the channel
+	var results []*mutationResult
+	for range files {
+		result := <-resultChan
+		results = append(results, result)
+	}
+
+	// process the mutation results and perform any necessary cleanup
+	for _, result := range results {
+		if result.err != nil {
+			return exitError(result.err.Error())
 		}
+
+		// Process the mutation result, if needed
+
+		// Cleanup any temporary files associated with the mutation
+
+		// Update overall statistics, if required
 	}
 
 	// unless explicitly requested otherwise, delete all mutations
