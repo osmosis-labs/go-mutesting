@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/jessevdk/go-flags"
@@ -170,6 +171,7 @@ type mutationResult struct {
 func mainCmd(args []string) int {
 	var opts = &options{}
 	var mutationBlackList = map[string]struct{}{}
+	var mutationBlackListMutex *sync.Mutex
 
 	if exit, exitCode := checkArguments(args, opts); exit {
 		return exitCode
@@ -221,7 +223,10 @@ func mainCmd(args []string) int {
 				if len(line) != 32 {
 					return exitError("%q is not an MD5 checksum", line)
 				}
+
+				mutationBlackListMutex.Lock()
 				mutationBlackList[line] = struct{}{}
+				mutationBlackListMutex.Unlock()
 			}
 		}
 	}
@@ -313,11 +318,11 @@ MUTATOR:
 
 				for _, f := range astutil.Functions(src) {
 					if m.MatchString(f.Name.Name) {
-						mutationID = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats)
+						mutationID = mutate(opts, mutators, mutationBlackList, mutationBlackListMutex, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats)
 					}
 				}
 			} else {
-				_ = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats)
+				_ = mutate(opts, mutators, mutationBlackList, mutationBlackListMutex, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats)
 			}
 
 			resultChan <- &mutationResult{file: file, stats: stats}
@@ -363,8 +368,7 @@ MUTATOR:
 	return returnOk
 }
 
-// mutate runs all passed in mutators on all applicable parts of a single file
-func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]struct{}, mutationID int, pkg *types.Package, info *types.Info, file string, fset *token.FileSet, src ast.Node, node ast.Node, tmpFile string, execs []string, stats *mutationStats) int {
+func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]struct{}, mutationBlackListMutex *sync.Mutex, mutationID int, pkg *types.Package, info *types.Info, file string, fset *token.FileSet, src ast.Node, node ast.Node, tmpFile string, execs []string, stats *mutationStats) int {
 	// loop through each mutator (default: branch, expression, and statement)
 	for _, m := range mutators {
 		debug(opts, "Mutator %s", m.Name)
@@ -382,7 +386,7 @@ func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]
 
 			mutationFile := fmt.Sprintf("%s.%d", tmpFile, mutationID)
 			// save original file's AST for safekeeping and to track if it has been mutated already
-			checksum, duplicate, err := saveAST(mutationBlackList, mutationFile, fset, src)
+			checksum, duplicate, err := saveAST(mutationBlackList, mutationFile, fset, src, mutationBlackListMutex)
 			if err != nil {
 				fmt.Printf("INTERNAL ERROR %s\n", err.Error())
 			} else if duplicate {
@@ -415,7 +419,7 @@ func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]
 
 						stats.skipped++
 					default:
-						fmt.Printf("UNKOWN exit code for %s\n", msg)
+						fmt.Printf("UNKNOWN exit code for %s\n", msg)
 					}
 				}
 			}
@@ -557,9 +561,7 @@ func main() {
 	os.Exit(mainCmd(os.Args[1:]))
 }
 
-// saveAST saves AST to a file with filename `file` and returns the checksum alongside a bool indicating whether
-// file checksum has been saved before (i.e. exists in `mutationBlackList`)
-func saveAST(mutationBlackList map[string]struct{}, file string, fset *token.FileSet, node ast.Node) (string, bool, error) {
+func saveAST(mutationBlackList map[string]struct{}, file string, fset *token.FileSet, node ast.Node, mutationBlackListMutex *sync.Mutex) (string, bool, error) {
 	var buf bytes.Buffer
 
 	h := md5.New()
@@ -570,6 +572,9 @@ func saveAST(mutationBlackList map[string]struct{}, file string, fset *token.Fil
 	}
 
 	checksum := fmt.Sprintf("%x", h.Sum(nil))
+
+	mutationBlackListMutex.Lock()
+	defer mutationBlackListMutex.Unlock()
 
 	// if checksum already exists in past mutations, return true for duplicate
 	if _, ok := mutationBlackList[checksum]; ok {
