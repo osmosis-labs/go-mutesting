@@ -11,11 +11,11 @@ func init() {
 	mutator.Register("cosmos/comparison", MutatorComparisonCosmos)
 }
 
-var comparisonMutations = map[string]string{
-	"GT":  "LTE",
-	"LT":  "GTE",
-	"GTE": "LT",
-	"LTE": "GT",
+var comparisonMutations = map[string][]string{
+	"GT":  {"LTE", "LT", "GTE"},
+	"LT":  {"GTE", "GT", "LTE"},
+	"GTE": {"LT", "GT", "LTE"},
+	"LTE": {"GT", "GTE", "LT"},
 }
 
 // MutatorComparisonCosmos implements a mutator to change Cosmos SDK comparisons.
@@ -26,24 +26,26 @@ func MutatorComparisonCosmos(pkg *types.Package, info *types.Info, node ast.Node
 	}
 
 	// ensure node has a valid SDK comparison operator
-	if _, ok := comparisonMutations[n.Name]; !ok {
+	mutations, ok := comparisonMutations[n.Name]
+	if !ok || len(mutations) == 0 {
 		return nil
 	}
 
 	o := n.Name
-	r, ok := comparisonMutations[n.Name]
-	if !ok {
-		return nil
-	}
+	var mutationsResult []mutator.Mutation
 
-	return []mutator.Mutation{
-		{
+	for _, mutation := range mutations {
+		r := mutation
+
+		mutationsResult = append(mutationsResult, mutator.Mutation{
 			Change: func() {
 				n.Name = r
 			},
 			Reset: func() {
 				n.Name = o
 			},
-		},
+		})
 	}
+
+	return mutationsResult
 }
