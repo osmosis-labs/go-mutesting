@@ -168,10 +168,11 @@ type mutationResult struct {
 	err   error
 }
 
+var mutationBlackListMutex sync.Mutex
+
 func mainCmd(args []string) int {
 	var opts = &options{}
 	var mutationBlackList = map[string]struct{}{}
-	var mutationBlackListMutex *sync.Mutex
 
 	if exit, exitCode := checkArguments(args, opts); exit {
 		return exitCode
@@ -318,11 +319,11 @@ MUTATOR:
 
 				for _, f := range astutil.Functions(src) {
 					if m.MatchString(f.Name.Name) {
-						mutationID = mutate(opts, mutators, mutationBlackList, mutationBlackListMutex, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats)
+						mutationID = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, f, tmpFile, execs, stats, &mutationBlackListMutex)
 					}
 				}
 			} else {
-				_ = mutate(opts, mutators, mutationBlackList, mutationBlackListMutex, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats)
+				_ = mutate(opts, mutators, mutationBlackList, mutationID, pkg, info, file, fset, src, src, tmpFile, execs, stats, &mutationBlackListMutex)
 			}
 
 			resultChan <- &mutationResult{file: file, stats: stats}
@@ -368,7 +369,7 @@ MUTATOR:
 	return returnOk
 }
 
-func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]struct{}, mutationBlackListMutex *sync.Mutex, mutationID int, pkg *types.Package, info *types.Info, file string, fset *token.FileSet, src ast.Node, node ast.Node, tmpFile string, execs []string, stats *mutationStats) int {
+func mutate(opts *options, mutators []mutatorItem, mutationBlackList map[string]struct{}, mutationID int, pkg *types.Package, info *types.Info, file string, fset *token.FileSet, src ast.Node, node ast.Node, tmpFile string, execs []string, stats *mutationStats, mutationBlackListMutex *sync.Mutex) int {
 	// loop through each mutator (default: branch, expression, and statement)
 	for _, m := range mutators {
 		debug(opts, "Mutator %s", m.Name)
