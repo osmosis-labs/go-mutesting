@@ -222,12 +222,10 @@ func mainCmd(args []string) int {
 				}
 
 				if len(line) != 32 {
-					return exitError("%q is not an MD5 checksum", line)
+					return exitError("%q is not a MD5 checksum", line)
 				}
 
-				mutationBlackListMutex.Lock()
 				mutationBlackList[line] = struct{}{}
-				mutationBlackListMutex.Unlock()
 			}
 		}
 	}
